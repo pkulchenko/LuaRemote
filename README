@@ -1,0 +1,25 @@
+LuaRemote is a client application in MobileLua for MobDebug.
+
+LuaRemote allows you to run and debug Lua applications remotely from a
+MobDebug server application. The application has been tested with 
+MoSync 2.7 on Android and iOS platforms.
+
+INSTALLATION
+
+Copy or import LuaRemote folder to your MoSync workspace. 
+
+DEPENDENCIES
+
+LuaRemote is a MoSync (http://mosync.com/) application and depends on 
+MobileLua (https://github.com/divineprog/mobilelua) and 
+MobDebug (https://github.com/pkulchenko/MobDebug). 
+
+A copy of MobDebug v0.40 is already included in the package.
+
+AUTHOR
+
+Paul Kulchenko (paul@kulchenko.com)
+
+LICENSE
+
+See LICENSE file

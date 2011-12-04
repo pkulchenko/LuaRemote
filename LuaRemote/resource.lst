@@ -1,0 +1,11 @@
+.res LUALIB
+.bin
+.include "../common/LuaLib.lua"
+
+.res LUAMOBDEBUG
+.bin
+.include "mobdebug.lua"
+
+.res LUAREMOTE
+.bin
+.include "LuaRemote.lua"

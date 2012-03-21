@@ -1,61 +1,74 @@
 --
--- MobDebug 0.40
--- Copyright Paul Kulchenko 2011
+-- MobDebug 0.44
+-- Copyright Paul Kulchenko 2011-2012
 -- Based on RemDebug 1.0 (http://www.keplerproject.org/remdebug)
 --
 
-(function()
+local mobdebug = {
+  _NAME = "mobdebug",
+  _COPYRIGHT = "Paul Kulchenko",
+  _DESCRIPTION = "Mobile Remote Debugger for the Lua programming language",
+  _VERSION = "0.44"
+}
 
-module("mobdebug", package.seeall)
-
-_COPYRIGHT = "Paul Kulchenko"
-_DESCRIPTION = "Mobile Remote Debugger for the Lua programming language"
-_VERSION = "0.40"
+local coroutine = coroutine
+local error = error
+local getfenv = getfenv
+local loadstring = loadstring
+local io = io
+local os = os
+local pairs = pairs
+local require = require
+local setmetatable = setmetatable
+local string = string
+local tonumber = tonumber
+local mosync = mosync
 
 -- this is a socket class that implements maConnect interface
 local function socketMobileLua() 
   local self = {}
+  self.select = function() return {} end
   self.connect = coroutine.wrap(function(host, port)
     while true do
-      local connection = maConnect("socket://" .. host .. ":" .. port)
+      local connection = mosync.maConnect("socket://" .. host .. ":" .. port)
   
       if connection > 0 then
-        local event = SysEventCreate()
+        local event = mosync.SysEventCreate()
         while true do
-          maWait(0)
-          maGetEvent(event)
-          local eventType = SysEventGetType(event)
-          if (EVENT_TYPE_CLOSE == eventType) then maExit(0) end
-          if (EVENT_TYPE_CONN == eventType and
-            SysEventGetConnHandle(event) == connection and
-            SysEventGetConnOpType(event) == CONNOP_CONNECT) then
+          mosync.maWait(0)
+          mosync.maGetEvent(event)
+          local eventType = mosync.SysEventGetType(event)
+          if (mosync.EVENT_TYPE_CLOSE == eventType) then mosync.maExit(0) end
+          if (mosync.EVENT_TYPE_CONN == eventType and
+            mosync.SysEventGetConnHandle(event) == connection and
+            mosync.SysEventGetConnOpType(event) == mosync.CONNOP_CONNECT) then
               -- result > 0 ? success : error
-              if not (SysEventGetConnResult(event) > 0) then connection = nil end
+              if not (mosync.SysEventGetConnResult(event) > 0) then connection = nil end
               break
           end
         end
-        SysFree(event)
+        mosync.SysFree(event)
       end
   
       host, port = coroutine.yield(connection and (function ()
         local self = {}
-        local outBuffer = SysAlloc(1000)
-        local inBuffer = SysAlloc(1000)
-        local event = SysEventCreate()
+        local outBuffer = mosync.SysAlloc(1000)
+        local inBuffer = mosync.SysAlloc(1000)
+        local event = mosync.SysEventCreate()
         local recvBuffer = ""
         function stringToBuffer(s, buffer)
           local i = 0
           for c in s:gmatch(".") do
             i = i + 1
             local b = s:byte(i)
-            SysBufferSetByte(buffer, i - 1, b)
+            mosync.SysBufferSetByte(buffer, i - 1, b)
           end
           return i
         end
         function bufferToString(buffer, len)
           local s = ""
           for i = 0, len - 1 do
-            local c = SysBufferGetByte(buffer, i)
+            local c = mosync.SysBufferGetByte(buffer, i)
             s = s .. string.char(c)
           end
           return s
@@ -63,16 +76,16 @@ local function socketMobileLua()
         self.send = coroutine.wrap(function(self, msg) 
           while true do
             local numberOfBytes = stringToBuffer(msg, outBuffer)
-            maConnWrite(connection, outBuffer, numberOfBytes)
+            mosync.maConnWrite(connection, outBuffer, numberOfBytes)
             local result = 0
             while true do
-              maWait(0)
-              maGetEvent(event)
-              local eventType = SysEventGetType(event)
-              if (EVENT_TYPE_CLOSE == eventType) then maExit(0) end
-              if (EVENT_TYPE_CONN == eventType and
-                  SysEventGetConnHandle(event) == connection and
-                  SysEventGetConnOpType(event) == CONNOP_WRITE) then
+              mosync.maWait(0)
+              mosync.maGetEvent(event)
+              local eventType = mosync.SysEventGetType(event)
+              if (mosync.EVENT_TYPE_CLOSE == eventType) then mosync.maExit(0) end
+              if (mosync.EVENT_TYPE_CONN == eventType and
+                  mosync.SysEventGetConnHandle(event) == connection and
+                  mosync.SysEventGetConnOpType(event) == mosync.CONNOP_WRITE) then
                 break
               end
             end
@@ -84,16 +97,16 @@ local function socketMobileLua()
             local line = recvBuffer
             while (len and string.len(line) < len)     -- either we need len bytes
                or (not len and not line:find("\n")) do -- or one line (if no len specified)
-              maConnRead(connection, inBuffer, 1000)
+              mosync.maConnRead(connection, inBuffer, 1000)
               while true do
-                maWait(0)
-                maGetEvent(event)
-                local eventType = SysEventGetType(event)
-                if (EVENT_TYPE_CLOSE == eventType) then maExit(0) end
-                if (EVENT_TYPE_CONN == eventType and
-                    SysEventGetConnHandle(event) == connection and
-                    SysEventGetConnOpType(event) == CONNOP_READ) then
-                  local result = SysEventGetConnResult(event);
+                mosync.maWait(0)
+                mosync.maGetEvent(event)
+                local eventType = mosync.SysEventGetType(event)
+                if (mosync.EVENT_TYPE_CLOSE == eventType) then mosync.maExit(0) end
+                if (mosync.EVENT_TYPE_CONN == eventType and
+                    mosync.SysEventGetConnHandle(event) == connection and
+                    mosync.SysEventGetConnOpType(event) == mosync.CONNOP_READ) then
+                  local result = mosync.SysEventGetConnResult(event);
                   if result > 0 then line = line .. bufferToString(inBuffer, result) end
                   break; -- got the event we wanted; now check if we have all we need
                 end
@@ -112,10 +125,10 @@ local function socketMobileLua()
         end)
         self.close = coroutine.wrap(function(self) 
           while true do
-            SysFree(inBuffer)
-            SysFree(outBuffer)
-            SysFree(event)
-            maConnClose(connection)
+            mosync.SysFree(inBuffer)
+            mosync.SysFree(outBuffer)
+            mosync.SysFree(event)
+            mosync.maConnClose(connection)
             coroutine.yield(self)
           end
         end)
@@ -127,7 +140,7 @@ local function socketMobileLua()
   return self
 end
 
-local socket = maConnect and socketMobileLua() or (require "socket")
+local socket = mosync and socketMobileLua() or (require "socket")
 
 --
 -- RemDebug 1.0 Beta
@@ -139,7 +152,11 @@ local coro_debugger
 local events = { BREAK = 1, WATCH = 2 }
 local breakpoints = {}
 local watches = {}
-local abort = false
+local lastsource
+local lastfile
+local watchescnt = 0
+local abort -- default value is nil; this is used in start/loop distinction
+local check_break = false
 local step_into = false
 local step_over = false
 local step_level = 0
@@ -147,12 +164,12 @@ local stack_level = 0
 local server
 local debugee = function () 
   local a = 1
-  print("Dummy script for debugging 1")
-  print("Dummy script for debugging 2")
+  a = a + 1
   return "ok"
 end
 
 local function set_breakpoint(file, line)
+  if file == '-' and lastfile then file = lastfile end
   if not breakpoints[file] then
     breakpoints[file] = {}
   end
@@ -160,6 +177,7 @@ local function set_breakpoint(file, line)
 end
 
 local function remove_breakpoint(file, line)
+  if file == '-' and lastfile then file = lastfile end
   if breakpoints[file] then
     breakpoints[file][line] = nil
   end
@@ -224,29 +242,40 @@ local function debug_hook(event, line)
     local caller = debug.getinfo(2, "S")
 
     -- grab the filename and fix it if needed
-    local file = caller.source
-    if string.find(file, "@") == 1 then
-      file = string.sub(file, 2)
-    end
-    -- remove references to the current folder (./ or .\)
-    if string.find(file, "./") == 1 or string.find(file, ".\\") == 1 then
-      file = string.sub(file, 3)
-    end
-    -- fix filenames for loaded strings that may contain scripts with newlines
-    if string.find(file, "\n") then
-      file = string.sub(string.gsub(file, "\n", ' '), 1, 32) -- limit to 32 chars
+    local file = lastfile
+    if (lastsource ~= caller.source) then
+      lastsource = caller.source
+      file = lastsource
+      if string.find(file, "@") == 1 then file = string.sub(file, 2) end
+      -- remove references to the current folder (./ or .\)
+      if string.find(file, "%.[/\\]") == 1 then file = string.sub(file, 3) end
+      -- fix filenames for loaded strings that may contain scripts with newlines
+      if string.find(file, "\n") then
+        file = string.sub(string.gsub(file, "\n", ' '), 1, 32) -- limit to 32 chars
+      end
+      file = string.gsub(file, "\\", "/") -- convert slash
+      lastfile = file
     end
 
-    local vars = capture_vars()
-    for index, value in pairs(watches) do
-      setfenv(value, vars)
-      local status, res = pcall(value)
-      if status and res then
-        coroutine.resume(coro_debugger, events.WATCH, vars, file, line, index)
-        restore_vars(vars)
+    local vars
+    if (watchescnt > 0) then
+      vars = capture_vars()
+      for index, value in pairs(watches) do
+        setfenv(value, vars)
+        local status, res = pcall(value)
+        if status and res then
+          coroutine.resume(coro_debugger, events.WATCH, vars, file, line, index)
+          restore_vars(vars)
+        end
       end
     end
-    if step_into or (step_over and stack_level <= step_level) or has_breakpoint(file, line) then
+
+    if step_into
+    or (step_over and stack_level <= step_level)
+    or has_breakpoint(file, line)
+    or (check_break and (socket.select({server}, {}, 0))[server]) then
+      vars = vars or capture_vars()
+      check_break = true -- this is only needed to avoid breaking too early when debugging is starting
       step_into = false
       step_over = false
       coroutine.resume(coro_debugger, events.BREAK, vars, file, line)
@@ -254,26 +283,49 @@ local function debug_hook(event, line)
   end
 end
 
-local function debugger_loop()
+local function debugger_loop(sfile, sline)
   local command
   local eval_env = {}
   local function emptyWatch () return false end
 
   while true do
-    local line = server:receive()
+    local line, err
+    if server.settimeout then server:settimeout(0.010) end
+    while true do
+      line, err = server:receive()
+      if not line and err == "timeout" then
+        -- yield for wx GUI applications if possible to avoid "busyness"
+        if wx and wx.wxGetApp then
+          local app = wx.wxGetApp()
+          local win = app:GetTopWindow()
+          if win then
+            -- process messages in a regular way
+            -- and exit as soon as the event loop is idle
+            win:Connect(wx.wxEVT_IDLE, function(event)
+              app:ExitMainLoop()
+              win:Disconnect(wx.wxID_ANY, wx.wxID_ANY, wx.wxEVT_IDLE)
+            end)
+            app:MainLoop()
+          end
+        end
+      else
+        break
+      end
+    end
+    if server.settimeout then server:settimeout() end -- back to blocking
     command = string.sub(line, string.find(line, "^[A-Z]+"))
     if command == "SETB" then
-      local _, _, _, filename, line = string.find(line, "^([A-Z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
-      if filename and line then
-        set_breakpoint(filename, tonumber(line))
+      local _, _, _, file, line = string.find(line, "^([A-Z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
+      if file and line then
+        set_breakpoint(file, tonumber(line))
         server:send("200 OK\n")
       else
         server:send("400 Bad Request\n")
       end
     elseif command == "DELB" then
-      local _, _, _, filename, line = string.find(line, "^([A-Z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
-      if filename and line then
-        remove_breakpoint(filename, tonumber(line))
+      _, _, _, file, line = string.find(line, "^([A-Z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
+      if file and line then
+        remove_breakpoint(file, tonumber(line))
         server:send("200 OK\n")
       else
         server:send("400 Bad Request\n")
@@ -301,32 +353,43 @@ local function debugger_loop()
     elseif command == "LOAD" then
       local _, _, size, name = string.find(line, "^[A-Z]+%s+(%d+)%s+([%w%p%s]*[%w%p]+)%s*$")
       size = tonumber(size)
-      if size == 0 then -- RELOAD the current script being debugged
-        server:send("200 OK 0\n") 
-        abort = true
-        coroutine.yield() -- this should not return as the hook will abort
-      end 
 
-      local chunk = server:receive(size)
-      if chunk then -- LOAD a new script for debugging
-        local func, res = loadstring(chunk, name)
-        if func then
-          server:send("200 OK 0\n") 
-          debugee = func
-          abort = true
-          coroutine.yield() -- this should not return as the hook will abort
+      if abort == nil then -- no LOAD/RELOAD allowed inside start()
+        if size > 0 then local _ = server:receive(size) end
+        if sfile and sline then
+          server:send("201 Started " .. sfile .. " " .. sline .. "\n")
         else
-          server:send("401 Error in Expression " .. string.len(res) .. "\n")
-          server:send(res)
+          server:send("200 OK 0\n")
         end
       else
-        server:send("400 Bad Request\n")
+        if size == 0 then -- RELOAD the current script being debugged
+          server:send("200 OK 0\n")
+          abort = true
+          coroutine.yield() -- this should not return as the hook will abort
+        end
+
+        local chunk = server:receive(size)
+        if chunk then -- LOAD a new script for debugging
+          local func, res = loadstring(chunk, name)
+          if func then
+            server:send("200 OK 0\n")
+            debugee = func
+            abort = true
+            coroutine.yield() -- this should not return as the hook will abort
+          else
+            server:send("401 Error in Expression " .. string.len(res) .. "\n")
+            server:send(res)
+          end
+        else
+          server:send("400 Bad Request\n")
+        end
       end
     elseif command == "SETW" then
       local _, _, exp = string.find(line, "^[A-Z]+%s+(.+)%s*$")
       if exp then 
         local func = loadstring("return(" .. exp .. ")")
         if func then
+          watchescnt = watchescnt + 1
           local newidx = #watches + 1
           watches[newidx] = func
           server:send("200 OK " .. newidx .. "\n") 
@@ -340,13 +403,15 @@ local function debugger_loop()
       local _, _, index = string.find(line, "^[A-Z]+%s+(%d+)%s*$")
       index = tonumber(index)
       if index > 0 and index <= #watches then
+        watchescnt = watchescnt - (watches[index] ~= emptyWatch and 1 or 0)
         watches[index] = emptyWatch
-        server:send("200 OK\n") 
+        server:send("200 OK\n")
       else
         server:send("400 Bad Request\n")
       end
     elseif command == "RUN" then
       server:send("200 OK\n")
+
       local ev, vars, file, line, idx_watch = coroutine.yield()
       eval_env = vars
       if ev == events.BREAK then
@@ -360,6 +425,7 @@ local function debugger_loop()
     elseif command == "STEP" then
       server:send("200 OK\n")
       step_into = true
+
       local ev, vars, file, line, idx_watch = coroutine.yield()
       eval_env = vars
       if ev == events.BREAK then
@@ -398,28 +464,30 @@ local function debugger_loop()
   end
 end
 
-function connect(controller_host, controller_port)
+local function connect(controller_host, controller_port)
   return socket.connect(controller_host, controller_port)
 end
 
 -- Tries to start the debug session by connecting with a controller
-function start(controller_host, controller_port)
+local function start(controller_host, controller_port)
   server = socket.connect(controller_host, controller_port)
   if server then
-    print("Connected to " .. controller_host .. ":" .. controller_port)
+    local info = debug.getinfo(2, "Sl")
+    local file = info.source
+    if string.find(file, "@") == 1 then file = string.sub(file, 2) end
+    if string.find(file, "%.[/\\]") == 1 then file = string.sub(file, 3) end
+
     debug.sethook(debug_hook, "lcr")
     coro_debugger = coroutine.create(debugger_loop)
-    return coroutine.resume(coro_debugger)
+    return coroutine.resume(coro_debugger, file, info.currentline)
   else
     print("Could not connect to " .. controller_host .. ":" .. controller_port)
   end
 end
 
-function loop(controller_host, controller_port)
+local function loop(controller_host, controller_port)
   server = socket.connect(controller_host, controller_port)
   if server then
-    print("Connected to " .. controller_host .. ":" .. controller_port)
-
     local function report(trace, err)
       local msg = err .. "\n" .. trace
       server:send("401 Error in Execution " .. string.len(msg) .. "\n")
@@ -456,7 +524,7 @@ end
 local basedir = ""
 
 -- Handles server debugging commands 
-function handle(params, client)
+local function handle(params, client)
   local _, _, command = string.find(params, "^([a-z]+)")
   local file, line, watch_idx
   if command == "run" or command == "step" or command == "out"
@@ -494,13 +562,14 @@ function handle(params, client)
       return nil, nil, "Unknown error" -- use return here for those cases where os.exit() is not wanted
     end
   elseif command == "setb" then
-    _, _, _, filename, line = string.find(params, "^([a-z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
-    if filename and line then
-      filename = string.gsub(filename, basedir, '') -- remove basedir
-      if not breakpoints[filename] then breakpoints[filename] = {} end
-      client:send("SETB " .. filename .. " " .. line .. "\n")
+    _, _, _, file, line = string.find(params, "^([a-z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
+    if file and line then
+      file = string.gsub(file, "\\", "/") -- convert slash
+      file = string.gsub(file, basedir, '') -- remove basedir
+      if not breakpoints[file] then breakpoints[file] = {} end
+      client:send("SETB " .. file .. " " .. line .. "\n")
       if client:receive() == "200 OK" then 
-        breakpoints[filename][line] = true
+        breakpoints[file][line] = true
       else
         print("Error: breakpoint not inserted")
       end
@@ -523,13 +592,14 @@ function handle(params, client)
       print("Invalid command")
     end
   elseif command == "delb" then
-    _, _, _, filename, line = string.find(params, "^([a-z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
-    if filename and line then
-      filename = string.gsub(filename, basedir, '') -- remove basedir
-      if not breakpoints[filename] then breakpoints[filename] = {} end
-      client:send("DELB " .. filename .. " " .. line .. "\n")
+    _, _, _, file, line = string.find(params, "^([a-z]+)%s+([%w%p%s]+)%s+(%d+)%s*$")
+    if file and line then
+      file = string.gsub(file, "\\", "/") -- convert slash
+      file = string.gsub(file, basedir, '') -- remove basedir
+      if not breakpoints[file] then breakpoints[file] = {} end
+      client:send("DELB " .. file .. " " .. line .. "\n")
       if client:receive() == "200 OK" then 
-        breakpoints[filename][line] = nil
+        breakpoints[file][line] = nil
       else
         print("Error: breakpoint not removed")
       end
@@ -537,13 +607,13 @@ function handle(params, client)
       print("Invalid command")
     end
   elseif command == "delallb" then
-    for filename, breaks in pairs(breakpoints) do
+    for file, breaks in pairs(breakpoints) do
       for line, _ in pairs(breaks) do
-        client:send("DELB " .. filename .. " " .. line .. "\n")
+        client:send("DELB " .. file .. " " .. line .. "\n")
         if client:receive() == "200 OK" then 
-          breakpoints[filename][line] = nil
+          breakpoints[file][line] = nil
         else
-          print("Error: breakpoint at file " .. filename .. " line " .. line .. " not removed")
+          print("Error: breakpoint at file " .. file .. " line " .. line .. " not removed")
         end
       end
     end
@@ -573,8 +643,10 @@ function handle(params, client)
     local _, _, exp = string.find(params, "^[a-z]+%s+(.+)$")
     if exp or (command == "reload") then 
       if command == "eval" then
-        client:send("EXEC return (" .. exp .. ")\n")
+        exp = string.gsub(exp, "\n", " ") -- convert new lines
+        client:send("EXEC return " .. exp .. "\n")
       elseif command == "exec" then
+        exp = string.gsub(exp, "\n", " ") -- convert new lines
         client:send("EXEC " .. exp .. "\n")
       elseif command == "reload" then
         client:send("LOAD 0 -\n")
@@ -584,12 +656,13 @@ function handle(params, client)
         local lines = file:read("*all")
         file:close()
 
-        local filename = string.gsub(exp, basedir, '') -- remove basedir
-        client:send("LOAD " .. string.len(lines) .. " " .. filename .. "\n")
+        local file = string.gsub(exp, "\\", "/") -- convert slash
+        file = string.gsub(file, basedir, '') -- remove basedir
+        client:send("LOAD " .. string.len(lines) .. " " .. file .. "\n")
         client:send(lines)
       end
-      local line = client:receive()
-      local _, _, status, len = string.find(line, "^(%d+)[%s%w]+%s+(%d+)%s*$")
+      local params = client:receive()
+      local _, _, status, len = string.find(params, "^(%d+)[%w%p%s]+%s+(%d+)%s*$")
       if status == "200" then
         len = tonumber(len)
         if len > 0 then 
@@ -597,6 +670,8 @@ function handle(params, client)
           print(res)
           return res
         end
+      elseif status == "201" then
+        _, _, file, line = string.find(params, "^201 Started%s+([%w%p%s]+)%s+(%d+)%s*$")
       elseif status == "401" then
         len = tonumber(len)
         local res = client:receive(len)
@@ -624,6 +699,7 @@ function handle(params, client)
   elseif command == "basedir" then
     local _, _, dir = string.find(params, "^[a-z]+%s+(.+)$")
     if dir then
+      dir = string.gsub(dir, "\\", "/") -- convert slash
       if not string.find(dir, "/$") then dir = dir .. "/" end
       basedir = dir
       print("New base directory is " .. basedir)
@@ -660,7 +736,7 @@ function handle(params, client)
 end
 
 -- Starts debugging server
-function listen(host, port)
+local function listen(host, port)
 
   local socket = require "socket"
 
@@ -693,4 +769,15 @@ function listen(host, port)
   end
 end
 
-end)()
+-- make public functions available
+mobdebug.listen = listen
+mobdebug.loop = loop
+mobdebug.handle = handle
+mobdebug.connect = connect
+mobdebug.start = start
+
+-- this is needed to make "require 'modebug'" to work when mobdebug
+-- module is loaded manually
+package.loaded.mobdebug = mobdebug
+
+return mobdebug
